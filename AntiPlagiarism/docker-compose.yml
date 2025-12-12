@@ -1,0 +1,88 @@
+services:
+  storage-db:
+    image: postgres:16
+    container_name: antipla-storage-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: storagedb
+    volumes:
+      - storage_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+  analysis-db:
+    image: postgres:16
+    container_name: antipla-analysis-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: analysisdb
+    volumes:
+      - analysis_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "6432:5432"
+
+  file-storage-service:
+    build:
+      context: .
+      dockerfile: FileStorageService/Dockerfile
+    container_name: antipla-storage
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__DefaultConnection: >
+        Host=storage-db;Port=5432;
+        Database=storagedb;
+        Username=postgres;Password=postgres
+    ports:
+      - "5100:8080"
+    depends_on:
+      storage-db:
+        condition: service_healthy
+
+  file-analysis-service:
+    build:
+      context: .
+      dockerfile: FileAnalysisService/Dockerfile
+    container_name: antipla-analysis
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__AnalysisDb: >
+        Host=analysis-db;Port=5432;
+        Database=analysisdb;
+        Username=postgres;Password=postgres
+      FileStorage__BaseUrl: http://file-storage-service:8080
+    ports:
+      - "5200:8080"
+    depends_on:
+      analysis-db:
+        condition: service_healthy
+      file-storage-service:
+        condition: service_started
+        
+  api-gateway:
+    build:
+      context: .
+      dockerfile: ApiGateway/Dockerfile
+    container_name: antipla-gateway
+    ports:
+      - "5777:8080"
+    depends_on:
+      file-storage-service:
+        condition: service_started
+      file-analysis-service:
+        condition: service_started
+
+volumes:
+  storage_db_data:
+  analysis_db_data:
